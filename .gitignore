@@ -1,6 +1,8 @@
 node_modules/
 *.tar.gz
 *.zip
+# Generated PDF assets: npm run prepare:pdf
+dist/vendor/pdfjs/
 # User-owned contract and banking details remain outside this public repository.
 dist/contract-template.docx
 dist/contract-defaults.json

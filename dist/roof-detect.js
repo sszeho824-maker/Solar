@@ -1,0 +1,15 @@
+import {area,validPolygon} from './layout-engine.js';
+function distance(p,a,b){const x=b.x-a.x,y=b.y-a.y,t=Math.max(0,Math.min(1,((p.x-a.x)*x+(p.y-a.y)*y)/(x*x+y*y||1)));return Math.hypot(p.x-a.x-t*x,p.y-a.y-t*y);}
+function simplify(points,epsilon){if(points.length<4)return points;let max=0,index=0;for(let i=1;i<points.length-1;i++){const d=distance(points[i],points[0],points.at(-1));if(d>max){max=d;index=i;}}if(max<=epsilon)return[points[0],points.at(-1)];return[...simplify(points.slice(0,index+1),epsilon).slice(0,-1),...simplify(points.slice(index),epsilon)];}
+export function detectRegion(pixels,width,height,seedX,seedY,tolerance=35){
+ if(!Number.isInteger(width)||!Number.isInteger(height)||width<2||height<2||width*height>400000||pixels.length!==width*height*4)throw Error('识别图像大小无效');
+ const sx=Math.max(0,Math.min(width-1,Math.round(seedX))),sy=Math.max(0,Math.min(height-1,Math.round(seedY))),seed=(sy*width+sx)*4,target=[pixels[seed],pixels[seed+1],pixels[seed+2]],seen=new Uint8Array(width*height),mask=new Uint8Array(width*height),queue=new Int32Array(width*height);let head=0,tail=1;queue[0]=sy*width+sx;seen[queue[0]]=1;let count=0;
+ while(head<tail){const n=queue[head++],k=n*4;const diff=Math.sqrt((pixels[k]-target[0])**2+(pixels[k+1]-target[1])**2+(pixels[k+2]-target[2])**2);if(diff>tolerance||pixels[k+3]<128)continue;mask[n]=1;count++;const x=n%width,y=Math.floor(n/width);for(const m of [x>0?n-1:-1,x<width-1?n+1:-1,y>0?n-width:-1,y<height-1?n+width:-1])if(m>=0&&!seen[m]){seen[m]=1;queue[tail++]=m;}}
+ if(count<25||count/(width*height)>.95)throw Error('未获得清晰屋顶分区，请调整色差阈值或改用手动描边');
+ const edges=new Map(),key=(x,y)=>`${x},${y}`;
+ function edge(ax,ay,bx,by){const k=key(ax,ay);if(!edges.has(k))edges.set(k,[]);edges.get(k).push({x:bx,y:by});}
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){if(!mask[y*width+x])continue;if(y===0||!mask[(y-1)*width+x])edge(x,y,x+1,y);if(x===width-1||!mask[y*width+x+1])edge(x+1,y,x+1,y+1);if(y===height-1||!mask[(y+1)*width+x])edge(x+1,y+1,x,y+1);if(x===0||!mask[y*width+x-1])edge(x,y+1,x,y);}
+ const loops=[];while(edges.size){const first=edges.keys().next().value;let current=first;const points=[];for(let i=0;i<=width*height*4;i++){const [x,y]=current.split(',').map(Number);points.push({x,y});const list=edges.get(current);if(!list?.length)break;const next=list.pop();if(!list.length)edges.delete(current);current=key(next.x,next.y);if(current===first)break;}if(points.length>=4){const closed=[...points,points[0]];let poly=simplify(closed,1).slice(0,-1);for(let e=2;poly.length>250&&e<20;e++)poly=simplify(closed,e).slice(0,-1);if(validPolygon(poly)&&area(poly)>20)loops.push(poly);}}
+ loops.sort((a,b)=>area(b)-area(a));if(!loops.length)throw Error('分区边界过于复杂，请改用手动描边');
+ return {roof:loops[0],holes:loops.slice(1,21),pixels:count,method:'按点选位置的相近颜色提取，非语义识别；边界需核对'};
+}

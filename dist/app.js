@@ -1,5 +1,6 @@
 import {defaults,calculate,parseBill} from './engine.js';
 import {initContracts} from './contract-ui.js';
+import {initLayout} from './layout-ui.js';
 const $=id=>document.getElementById(id),fmt=(n,d=0)=>Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}),money=n=>fmt(n,2),keys=Object.keys(defaults);
 let current=null,attachment=null,fileURL=null,pending={},ocrBusy=false;
 const readStore=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(key));return v??fallback;}catch{return fallback;}};
@@ -7,13 +8,14 @@ let history=readStore('solar-quotes-v1',[]);if(!Array.isArray(history))history=[
 function persist(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch{toast('浏览器存储不可用，请导出文件保留报价。');return false;}}
 let toastTimer;function toast(s){$('toast').textContent=s;$('toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').style.display='none',3500);}
 function params(){return Object.fromEntries(keys.map(k=>[k,typeof defaults[k]==='number'?($(k).value.trim()===''?NaN:Number($(k).value)):$(k).value]));}
-function fill(p){for(const k of keys)$(k).value=p[k]??defaults[k];$('manual-wrap').hidden=$('mode').value!=='manual';}
+function fill(p){for(const k of keys)$(k).value=p[k]??defaults[k];$('manual-wrap').hidden=$('mode').value!=='manual';$('custom-rate-wrap').hidden=$('priceMode').value!=='custom';}
 function put(id,text){$(id).textContent=text;}
 function clearResult(message){current=null;for(const id of ['capacity','total','rate','days','annual','saving','payback','config','area-detail','schedule','basis','basis-detail','roof-use'])put(id,'—');put('panel-count','');$('warnings').replaceChildren();$('roof-bar').style.width='0';put('error',message);for(const id of ['save','print','export'])$(id).disabled=true;}
 function update(){
+ $('custom-rate-wrap').hidden=$('priceMode').value!=='custom';
  $('manual-wrap').hidden=$('mode').value!=='manual';
  try{current=calculate(params());const r=current;put('error','');for(const id of ['save','print','export'])$(id).disabled=r.kwp<=0;
- put('capacity',fmt(r.kwp,3).replace(/\.?0+$/,''));put('panel-count',`${r.panels} 块组件`);put('total',money(r.total));put('rate',fmt(r.rate,1));put('days',r.days?`${r.days} 天`:'—');
+ put('capacity',fmt(r.kwp,3).replace(/\.?0+$/,''));put('panel-count',`${r.panels} 块组件`);put('total',money(r.total));put('rate',String(r.rate));put('days',r.days?`${r.days} 天`:'—');
  put('annual',`${fmt(r.annual)} kWh / 年`);put('saving',`${fmt(r.saving)} THB / 年`);put('payback',r.payback?`${fmt(r.payback,1)} 年`:'需提供有效用电数据');
  const ratio=r.p.area>0?r.requiredArea/r.p.area*100:0;put('roof-use',r.p.area>0?`${fmt(ratio,1)}% / 总面积`:'未提供屋顶面积');$('roof-bar').style.width=`${Math.min(100,ratio)}%`;
  put('config',`${r.panels} 块 × ${fmt(r.p.panelW)} Wp`);put('area-detail',`组件占用 ${fmt(r.requiredArea,1)} m²；可用屋顶 ${fmt(r.p.area*r.p.usable/100,1)} m²`);
@@ -21,12 +23,19 @@ function update(){
  put('basis',({auto:'屋顶与用电双重约束',roof:'按屋顶可用面积',bill:'按白天用电需求',manual:'指定容量 · 整块取整'})[r.p.mode]);
  put('basis-detail',`屋顶上限 ${fmt(r.roofKwp,3)} kWp；用电需求容量 ${fmt(r.loadKwp,3)} kWp`);
  $('warnings').replaceChildren(...r.warnings.map(w=>{const li=document.createElement('li');li.textContent=w;return li;}));
- document.querySelector('.rule').textContent=`≥ 50 kWp 按 ${r.p.largeRate} THB/W；< 50 kWp 按 ${r.p.smallRate} THB/W。均为整套容量含税单价，不重复加税。`;
+ document.querySelector('.rule').textContent=r.p.priceMode==='tier'?`本次按容量阶梯计价：≥50 kWp ${r.p.largeRate} THB/W；<50 kWp ${r.p.smallRate} THB/W。价格含税，不含电池。`:`本次采用指定含税单价 ${r.rate} THB/W；总价按实际Wp × 单价计算，不含电池。`;
  }catch(e){clearResult(e.message);}
 }
-function view(name){for(const el of document.querySelectorAll('.view'))el.hidden=el.id!==`${name}-view`;for(const el of document.querySelectorAll('.nav'))el.classList.toggle('active',el.dataset.view===name);put('breadcrumb',({quote:'新建报价',history:'本机报价记录',settings:'估算参数',contracts:'生成合同'})[name]);if(name==='history')renderHistory();window.scrollTo({top:0,behavior:'smooth'});}
+function view(name){for(const el of document.querySelectorAll('.view'))el.hidden=el.id!==`${name}-view`;for(const el of document.querySelectorAll('.nav'))el.classList.toggle('active',el.dataset.view===name);put('breadcrumb',({quote:'新建报价',history:'本机报价记录',settings:'估算参数',contracts:'生成合同',layout:'安装示意图'})[name]);if(name==='history')renderHistory();window.scrollTo({top:0,behavior:'smooth'});}
 const contracts=initContracts({getQuote:()=>current,getProject:()=>$('project-name').value.trim(),getClient:()=>$('client').value.trim(),getAddress:()=>$('address').value.trim(),view,toast});
-for(const el of document.querySelectorAll('.nav'))el.addEventListener('click',()=>el.dataset.view==='contracts'?contracts.open():view(el.dataset.view));
+const layout=initLayout({getQuote:()=>current,getProject:()=>$('project-name').value.trim(),getAddress:()=>$('address').value.trim(),applyQuote:r=>{
+ if(!current)throw Error('请先修复当前报价中的无效参数，再采用排布');
+ if(!r.count)throw Error('排布中没有有效组件');
+ $('mode').value='manual';$('manual').value=r.kwp;$('panelW').value=r.params.power;$('panelArea').value=r.params.width*r.params.height;$('area').value=r.roofArea;$('usable').value=100;update();
+ if(!current||current.panels!==r.count)throw Error('容量同步失败，请核对组件参数');
+},view,toast});
+for(const el of document.querySelectorAll('.nav'))el.addEventListener('click',()=>el.dataset.view==='contracts'?contracts.open():el.dataset.view==='layout'?layout.open():view(el.dataset.view));
+$('layout-open').onclick=()=>layout.open();
 $('contract').onclick=()=>contracts.open();
 $('edit-settings').onclick=e=>{e.preventDefault();view('settings');};
 $('quote-form').addEventListener('input',update);$('quote-form').addEventListener('submit',e=>e.preventDefault());

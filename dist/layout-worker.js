@@ -1,0 +1,2 @@
+import {generateLayout} from './layout-engine.js';
+self.onmessage=({data})=>{try{self.postMessage({id:data.id,result:generateLayout(data.roofs,data.obstacles,data.params)});}catch(e){self.postMessage({id:data.id,error:e.message});}};
