@@ -1,3 +1,7 @@
 node_modules/
 *.tar.gz
 *.zip
+# User-owned contract and banking details remain outside this public repository.
+dist/contract-template.docx
+dist/contract-defaults.json
+dist/contract-manifest.json
