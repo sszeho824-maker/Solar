@@ -1,0 +1,9 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {calculate,parseBill} from '../dist/engine.js';
+test('50 kWp inclusive price boundary',()=>{for(const [manual,rate,total] of [[49.375,21.5,1061562.5],[50,15.5,775000],[50.625,15.5,784687.5]]){const r=calculate({mode:'manual',manual});assert.equal(r.rate,rate);assert.equal(r.total,total);}});
+test('quote never exceeds available roof in auto mode',()=>{const r=calculate({area:100,bill:999999});assert.ok(r.requiredArea<=75);assert.ok(r.kwp<=r.roofKwp);});
+test('whole panel rounding controls actual price tier',()=>{const r=calculate({mode:'manual',manual:50,panelW:610});assert.equal(r.panels,81);assert.equal(r.kwp,49.41);assert.equal(r.rate,21.5);});
+test('reject invalid values and absent required inputs',()=>{for(const p of [{area:-1},{tariff:0},{yield:NaN},{usable:101},{mode:'auto',area:0,bill:0,kwh:0},{mode:'bill',bill:0,kwh:0}])assert.throws(()=>calculate(p));});
+test('zero roof and daytime produce no phantom project',()=>{const r=calculate({area:1,bill:2000});assert.equal(r.kwp,0);assert.equal(r.total,0);assert.equal(r.days,0);assert.equal(calculate({daytime:0}).kwp,0);});
+test('actual kWh overrides bill and savings bounded by daytime load',()=>{const r=calculate({mode:'manual',manual:1000,kwh:100,bill:999999,daytime:50});assert.equal(r.monthlyKwh,100);assert.ok(r.selfConsumed<=600);});
+test('roof-only has no invented savings',()=>{const r=calculate({mode:'roof',bill:0,kwh:0});assert.ok(r.total>0);assert.equal(r.saving,0);assert.equal(r.payback,null);});
+test('bill parser only extracts labelled values',()=>{assert.deepEqual(parseBill('Total amount: THB 45,000.00\n10,000 kWh'),{kwh:10000,bill:45000});assert.deepEqual(parseBill('客户 123456 日期 2026-11-09'),{});});
