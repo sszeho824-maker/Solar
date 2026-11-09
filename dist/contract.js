@@ -1,3 +1,4 @@
+import {batteryPricing} from './engine.js';
 // DOCX generation keeps all package members and edits text tokens only.
 const TH_DIGITS=['ศูนย์','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
 function thaiBlock(n,afterMillion=false){if(n===0)return '';const digits=String(n);let out='';for(let i=0;i<digits.length;i++){const d=Number(digits[i]),pos=digits.length-i-1;if(!d)continue;if(pos===1)out+=(d===1?'':d===2?'ยี่':TH_DIGITS[d])+'สิบ';else if(pos===0)out+=(d===1&&(n>1||afterMillion)?'เอ็ด':TH_DIGITS[d]);else out+=TH_DIGITS[d]+(['','','ร้อย','พัน','หมื่น','แสน'][pos]);}return out;}
@@ -22,6 +23,14 @@ export function buildContractData(quote,info){
  const months=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
  const values={CONTRACT_TITLE_ZH:info.projectName.trim()+'光伏系统施工合同',CONTRACT_TITLE_TH:'สัญญาติดตั้งระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ '+info.projectName.trim(),KWP:String(Number(quote.kwp.toFixed(6))),OWNER_NAME:info.ownerName.trim(),OWNER_ID:info.ownerId?.trim()||'________________',OWNER_ADDRESS:info.ownerAddress?.trim()||info.projectAddress.trim(),PROJECT_ADDRESS:info.projectAddress.trim(),DATE_ZH:`${year}年${month}月${day}日`,DATE_TH:`${day} เดือน ${months[month-1]} พ.ศ. ${year+543}`,PROVIDER_TH:info.providerThai.trim(),PROVIDER_ZH:info.providerChinese.trim(),PROVIDER_ADDRESS_TH:info.providerAddressThai.trim(),PROVIDER_ADDRESS_ZH:info.providerAddressChinese.trim(),DEPOSIT_PCT:String(pct),COD_DAYS:String(cod)};
  for(const [prefix,cents] of Object.entries({TOTAL:total,CONSTRUCTION:total-fee,FILING:fee,DEPOSIT:deposit,BALANCE:balance})){const w=moneyWords(cents);values[prefix]=(cents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});values[prefix+'_TH']=w.th;values[prefix+'_ZH']=w.zh;}
+ const battery=quote.battery||batteryPricing(quote.p||{}),format=n=>Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+ if(battery.needed){
+  const warrantyRaw=info.batteryWarrantyYears??10,warranty=String(warrantyRaw).trim()===''?null:Number(warrantyRaw);if(warranty!==null&&(!Number.isInteger(warranty)||warranty<1||warranty>50))throw Error('电池厂家质保年限需为1–50年，或留空按厂家书面政策执行');
+  values.SYSTEM_SCOPE_ZH=`本方案含电池${battery.quantity}台，每台标称16 kWh，总标称容量${battery.capacityKwh} kWh；电池未税单价56,000.00 THB/台，未税小计${format(battery.subtotalExVat)} THB，VAT ${battery.vatRate}%为${format(battery.vatAmount)} THB，电池含税小计${format(battery.totalIncVat)} THB，已计入上述合同总价，不重复加收。`;
+  values.SYSTEM_SCOPE_TH=`รวมแบตเตอรี่จำนวน ${battery.quantity} ชุด ความจุพิกัดชุดละ 16 kWh รวม ${battery.capacityKwh} kWh ราคาไม่รวมภาษีชุดละ 56,000.00 บาท รวมราคาแบตเตอรี่ก่อนภาษี ${format(battery.subtotalExVat)} บาท ภาษีมูลค่าเพิ่ม ${battery.vatRate}% เป็นเงิน ${format(battery.vatAmount)} บาท รวมราคาแบตเตอรี่พร้อมภาษี ${format(battery.totalIncVat)} บาท ซึ่งรวมอยู่ในมูลค่าสัญญาข้างต้นแล้ว ไม่เรียกเก็บซ้ำ`;
+  values.BATTERY_WARRANTY_ZH=warranty===null?'电池质保期限及条件以所供型号的厂家书面质保文件为准。':`电池由厂家质保${warranty}年，按厂家质保条款执行。`;
+  values.BATTERY_WARRANTY_TH=warranty===null?'ระยะเวลาและเงื่อนไขการรับประกันแบตเตอรี่ให้เป็นไปตามเอกสารรับประกันเป็นลายลักษณ์อักษรของผู้ผลิตสำหรับรุ่นที่ส่งมอบ':`แบตเตอรี่รับประกันโดยผู้ผลิตเป็นระยะเวลา ${warranty} ปี ตามเงื่อนไขการรับประกันของผู้ผลิต`;
+ }else{values.SYSTEM_SCOPE_ZH='本方案不含电池。';values.SYSTEM_SCOPE_TH='ไม่รวมแบตเตอรี่';values.BATTERY_WARRANTY_ZH='本合同报价不含电池，电池质保条款不适用。';values.BATTERY_WARRANTY_TH='ไม่รวมแบตเตอรี่ในขอบเขตของสัญญาฉบับนี้ จึงไม่ใช้เงื่อนไขการรับประกันแบตเตอรี่';}
  for(const n of [1,2])for(const [suffix,key] of Object.entries({NAME:'Name',NUMBER:'Number',BANK:'Bank',BRANCH:'Branch'}))values[`ACCOUNT${n}_${suffix}`]=info[`account${n}${key}`].trim();
  return {values,totalSatang:total,depositSatang:deposit,balanceSatang:balance,filename:values.CONTRACT_TITLE_ZH.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').slice(0,100)+'.docx'};
 }

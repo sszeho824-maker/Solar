@@ -19,3 +19,5 @@ input:focus,select:focus,textarea:focus{outline-color:#b0bed8;border-color:var(-
 @media(max-width:900px){.brand{width:165px}.brand-caption{font-size:8px;margin-top:7px}.sidebar nav{align-items:center}}
 @media(max-width:660px){.brand{width:127px;flex-shrink:0}.brand-caption{font-size:7px;letter-spacing:1px;margin-top:5px}.sidebar{gap:8px}.nav{font-size:9px;padding:9px 5px}}
 @media print{.print-masthead{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #344b7b;padding-bottom:14px;margin-bottom:18px}.print-masthead img{width:190px;height:auto}.print-masthead span{font-size:15px;color:#344b7b}.result-card:before{display:none}.price-row strong,.capacity strong{color:#263751}.scope p,#warnings{color:#555}}
+
+.battery-breakdown{padding:14px 0;border-bottom:1px solid var(--line);font-size:10px}.battery-breakdown>div{display:flex;justify-content:space-between;gap:10px;margin:10px 0;color:#8290a8}.battery-breakdown b{color:var(--brand-blue);font-weight:500;text-align:right}.battery-breakdown>div:last-child b{color:var(--brand-red)}#battery-warranty-wrap label{display:block;font-size:11px;color:#53617b}

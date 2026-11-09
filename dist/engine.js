@@ -1,8 +1,11 @@
-export const defaults={area:500,usable:75,bill:45000,kwh:0,tariff:4.5,daytime:75,coverage:90,panelW:625,panelArea:2.8,yield:1400,selfUse:90,mode:'auto',manual:50,smallRate:21.5,largeRate:15.5,priceMode:'tier',customRate:15.5,productivity:12,prep:2,buffer:2,maintenance:1};
+export const defaults={area:500,usable:75,bill:45000,kwh:0,tariff:4.5,daytime:75,coverage:90,panelW:625,panelArea:2.8,yield:1400,selfUse:90,mode:'auto',manual:50,smallRate:21.5,largeRate:15.5,priceMode:'tier',customRate:15.5,needsBattery:'no',batteryQty:1,batteryVatRate:7,productivity:12,prep:2,buffer:2,maintenance:1};
+export const BATTERY_KWH=16,BATTERY_PRICE_EX_VAT=56000;
+export function batteryPricing(raw={}){const p={...defaults,...raw};if(!['yes','no'].includes(p.needsBattery))throw Error('请选择是否需要电池');if(p.needsBattery==='no')return{needed:false,quantity:0,unitKwh:BATTERY_KWH,capacityKwh:0,unitPriceExVat:BATTERY_PRICE_EX_VAT,vatRate:Number(p.batteryVatRate)||0,subtotalExVat:0,vatAmount:0,totalIncVat:0};const quantity=Number(p.batteryQty),vatRate=Number(p.batteryVatRate);if(!Number.isInteger(quantity)||quantity<1||quantity>1000)throw Error('电池数量必须为1–1000之间的整数');if(!Number.isFinite(vatRate)||vatRate<0||vatRate>100)throw Error('电池VAT税率必须介于0–100%');const subtotalExVat=quantity*BATTERY_PRICE_EX_VAT,vatAmount=Math.round(subtotalExVat*vatRate)/100;return{needed:true,quantity,unitKwh:BATTERY_KWH,capacityKwh:quantity*BATTERY_KWH,unitPriceExVat:BATTERY_PRICE_EX_VAT,vatRate,subtotalExVat,vatAmount,totalIncVat:subtotalExVat+vatAmount};}
 export function rateForKwp(raw,kwp){const p={...defaults,...raw};if(!['tier','15.5','21.5','custom'].includes(p.priceMode))throw Error('请选择有效的报价单价方式');const rate=p.priceMode==='tier'?(kwp>=50?Number(p.largeRate):Number(p.smallRate)):p.priceMode==='custom'?Number(p.customRate):Number(p.priceMode);if(!Number.isFinite(rate)||rate<=0)throw Error('含税安装单价必须大于零');return rate;}
 export function calculate(raw){
  const p={...defaults,...raw};
  if(p.priceMode!=='custom'&&(!Number.isFinite(Number(p.customRate))||Number(p.customRate)<=0))p.customRate=defaults.customRate;
+ if(p.needsBattery==='no'){if(!Number.isFinite(Number(p.batteryQty))||Number(p.batteryQty)<1)p.batteryQty=defaults.batteryQty;if(!Number.isFinite(Number(p.batteryVatRate)))p.batteryVatRate=defaults.batteryVatRate;}
  for(const key of Object.keys(defaults)){if(typeof defaults[key]==='number'&&(!Number.isFinite(Number(p[key]))))throw Error('请填写有效数字');if(typeof defaults[key]==='number')p[key]=Number(p[key]);}
  for(const key of ['area','bill','kwh','manual','prep','buffer','maintenance'])if(p[key]<0)throw Error('面积、用电量、费用及工期不能为负数');
  for(const key of ['usable','daytime','coverage','selfUse'])if(p[key]<0||p[key]>100)throw Error('百分比必须介于 0–100%');
@@ -19,7 +22,7 @@ export function calculate(raw){
  const loadKwp=p.selfUse>0?monthlyKwh*12*p.daytime/100*p.coverage/100/(p.yield*p.selfUse/100):0;
  let target=p.mode==='manual'?p.manual:p.mode==='roof'?roofKwp:p.mode==='bill'?loadKwp:Math.min(p.area>0?roofKwp:Infinity,monthlyKwh>0?loadKwp:Infinity);
  const panels=Math.max(0,Math.floor(target*1000/p.panelW+1e-8));
- const watts=panels*p.panelW,kwp=watts/1000,rate=rateForKwp(p,kwp),total=watts*rate;
+ const watts=panels*p.panelW,kwp=watts/1000,rate=rateForKwp(p,kwp),solarTotal=watts*rate,battery=batteryPricing(p),total=solarTotal+battery.totalIncVat;
  if(!Number.isFinite(total)||total>Number.MAX_SAFE_INTEGER/100)throw Error('报价金额超出可精确处理范围，请核对容量和单价');
  const annual=kwp*p.yield,selfConsumed=Math.min(annual*p.selfUse/100,monthlyKwh*12*p.daytime/100),saving=selfConsumed*p.tariff,net=saving-total*p.maintenance/100;
  const installDays=kwp>0?Math.ceil(kwp/p.productivity):0;
@@ -29,7 +32,8 @@ export function calculate(raw){
  if(kwp>0&&kwp<50&&p.priceMode==='tier')warnings.push(`当前选用容量阶梯计价，低于50 kWp适用 ${p.smallRate} THB/W；可在报价页选择指定或自定义单价。`);
  if(p.kwh<=0&&p.bill>0)warnings.push('用电量由电费 ÷ 估算电价换算，建议用账单上的实际 kWh 替换。');
  if(p.mode==='manual'&&Math.abs(kwp-p.manual)>1e-8)warnings.push('容量已按整块组件向下取整，报价以取整后的实际 Wp 为准。');
- return {p,monthlyKwh,roofPanels,roofKwp,loadKwp,panels,watts,kwp,rate,total,annual,selfConsumed,saving,net,payback:net>0?total/net:null,installDays,days:kwp>0?Math.ceil(p.prep)+installDays+Math.ceil(p.buffer):0,requiredArea:panels*p.panelArea,warnings};
+ if(battery.needed)warnings.push('现场工期仍为光伏施工估算，电池安装与调试时间需结合型号和现场另行确认。');
+ return {p,monthlyKwh,roofPanels,roofKwp,loadKwp,panels,watts,kwp,rate,solarTotal,battery,total,annual,selfConsumed,saving,net,payback:net>0?total/net:null,installDays,days:kwp>0?Math.ceil(p.prep)+installDays+Math.ceil(p.buffer):0,requiredArea:panels*p.panelArea,warnings};
 }
 export function parseBill(text){
  const clean=text.replace(/，/g,',');
